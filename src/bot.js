@@ -33,7 +33,7 @@ let settings = {
     message: 'Thank you for your message! I will get back to you soon.',
   },
   autoStatusView: { enabled: false },
-  antiDelete: { enabled: false, adminNumber: '' },
+  antiDelete: { enabled: false },
 };
 
 let sock = null;
@@ -172,12 +172,14 @@ async function startBot() {
       // Detect "Delete for Everyone" (revoke protocol message)
       const protocolMsg = msg.message?.protocolMessage;
       if (protocolMsg && protocolMsg.type === proto.Message.ProtocolMessage.Type.REVOKE) {
-        if (settings.antiDelete.enabled && settings.antiDelete.adminNumber) {
+        if (settings.antiDelete.enabled && sock.user?.id) {
           const revokedId = protocolMsg.key?.id;
           const cached = revokedId ? messageCache.get(revokedId) : null;
-          const adminJid = settings.antiDelete.adminNumber.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
+          const myNumber = sock.user.id.split(':')[0];
+          const adminJid = myNumber + '@s.whatsapp.net';
           const senderName = cached?.pushName || 'Unknown';
-          const senderNumber = (cached?.sender || jid || 'Unknown').replace('@s.whatsapp.net', '');
+          const senderJid = cached?.sender || jid || 'Unknown';
+          const senderNumber = senderJid.replace('@s.whatsapp.net', '').replace(/@.*/g, '');
           const time = cached?.timestamp
             ? new Date(cached.timestamp * 1000).toLocaleString()
             : new Date().toLocaleString();
@@ -197,13 +199,13 @@ async function startBot() {
           }
 
           const notification = `🛡️ *Anti-Delete Alert*\n\n` +
-            `👤 *From:* ${senderName} (${senderNumber})\n` +
+            `👤 *From:* ${senderName} (+${senderNumber})\n` +
             `🕐 *Time:* ${time}\n` +
             `💬 *Deleted Message:*\n${deletedContent}`;
 
           try {
             await sock.sendMessage(adminJid, { text: notification });
-            console.log('Anti-delete notification sent to admin');
+            console.log('Anti-delete notification sent to', myNumber);
           } catch (err) {
             console.error('Error sending anti-delete notification:', err.message);
           }

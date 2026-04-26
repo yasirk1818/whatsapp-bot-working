@@ -101,11 +101,6 @@ function applySettingsToUI(data) {
     replyMsgEl.value = data.autoReply.message;
   }
 
-  // Anti Delete admin number
-  const adminNumEl = document.getElementById('antiDelete-adminNumber');
-  if (adminNumEl && data.antiDelete) {
-    adminNumEl.value = data.antiDelete.adminNumber || '';
-  }
 }
 
 // Event Listeners
@@ -151,11 +146,4 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Anti Delete admin number
-  const adminNumEl = document.getElementById('antiDelete-adminNumber');
-  if (adminNumEl) {
-    adminNumEl.addEventListener('change', () => {
-      updateSetting('antiDelete', { adminNumber: adminNumEl.value });
-    });
-  }
 });
