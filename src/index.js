@@ -1,6 +1,12 @@
 const express = require('express');
 const path = require('path');
-const { startBot, getState, updateSettings, getSettings } = require('./bot');
+const {
+  initAllDevices,
+  addDevice,
+  removeDevice,
+  getDeviceList,
+  getDeviceInstance,
+} = require('./bot');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -8,19 +14,50 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// Get current bot state (QR, connection status, settings)
-app.get('/api/state', (req, res) => {
-  res.json(getState());
+// ─── Device Management ───
+
+// List all devices
+app.get('/api/devices', (req, res) => {
+  res.json(getDeviceList());
 });
 
-// Get settings
-app.get('/api/settings', (req, res) => {
-  res.json(getSettings());
+// Add new device
+app.post('/api/devices', (req, res) => {
+  const deviceId = addDevice();
+  res.json({ success: true, deviceId });
 });
 
-// Update settings
-app.post('/api/settings', (req, res) => {
-  const updated = updateSettings(req.body);
+// Delete device
+app.delete('/api/devices/:id', async (req, res) => {
+  try {
+    await removeDevice(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── Per-Device State & Settings ───
+
+// Get device state (QR, connection)
+app.get('/api/devices/:id/state', (req, res) => {
+  const instance = getDeviceInstance(req.params.id);
+  if (!instance) return res.status(404).json({ error: 'Device not found' });
+  res.json(instance.getState());
+});
+
+// Get device settings
+app.get('/api/devices/:id/settings', (req, res) => {
+  const instance = getDeviceInstance(req.params.id);
+  if (!instance) return res.status(404).json({ error: 'Device not found' });
+  res.json(instance.getSettings());
+});
+
+// Update device settings
+app.post('/api/devices/:id/settings', (req, res) => {
+  const instance = getDeviceInstance(req.params.id);
+  if (!instance) return res.status(404).json({ error: 'Device not found' });
+  const updated = instance.updateSettings(req.body);
   res.json({ success: true, settings: updated });
 });
 
@@ -31,5 +68,5 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Dashboard running at http://localhost:${PORT}`);
-  startBot();
+  initAllDevices();
 });
