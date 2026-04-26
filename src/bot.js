@@ -19,6 +19,49 @@ const REACTIONS = ['👍', '❤️', '😂', '🔥', '👏', '🎉', '💯', '�
 
 const MAX_CACHE_SIZE = 500;
 const messageCache = new Map();
+const LID_MAP_FILE = path.join(__dirname, '..', 'lid-map.json');
+const lidToPhone = new Map();
+
+function loadLidMap() {
+  try {
+    if (fs.existsSync(LID_MAP_FILE)) {
+      const data = JSON.parse(fs.readFileSync(LID_MAP_FILE, 'utf-8'));
+      for (const [lid, phone] of Object.entries(data)) {
+        lidToPhone.set(lid, phone);
+      }
+      console.log('Loaded', lidToPhone.size, 'LID mappings');
+    }
+  } catch (err) {
+    console.error('Error loading LID map:', err.message);
+  }
+}
+
+function saveLidMap() {
+  try {
+    const obj = Object.fromEntries(lidToPhone);
+    fs.writeFileSync(LID_MAP_FILE, JSON.stringify(obj, null, 2));
+  } catch (err) {
+    console.error('Error saving LID map:', err.message);
+  }
+}
+
+function resolveJidToNumber(jid) {
+  if (!jid) return 'Unknown';
+  if (jid.endsWith('@s.whatsapp.net')) {
+    return jid.replace('@s.whatsapp.net', '');
+  }
+  if (jid.endsWith('@lid') && lidToPhone.has(jid)) {
+    return lidToPhone.get(jid);
+  }
+  const numMatch = jid.match(/^(\d+)@/);
+  if (numMatch && lidToPhone.has(jid)) {
+    return lidToPhone.get(jid);
+  }
+  if (numMatch) return numMatch[1];
+  return jid;
+}
+
+loadLidMap();
 
 let state = {
   qr: null,
@@ -160,6 +203,67 @@ async function startBot() {
   // Save credentials on update
   sock.ev.on('creds.update', saveCreds);
 
+  // Build LID-to-phone mapping from contacts
+  sock.ev.on('contacts.upsert', (contacts) => {
+    let changed = false;
+    for (const contact of contacts) {
+      const id = contact.id;
+      const lid = contact.lid;
+      if (id && id.endsWith('@s.whatsapp.net')) {
+        const phone = id.replace('@s.whatsapp.net', '');
+        if (lid && !lidToPhone.has(lid)) {
+          lidToPhone.set(lid, phone);
+          changed = true;
+        }
+      }
+      if (lid && id && id.endsWith('@s.whatsapp.net')) {
+        const phone = id.replace('@s.whatsapp.net', '');
+        const lidJid = lid.endsWith('@lid') ? lid : lid + '@lid';
+        if (!lidToPhone.has(lidJid)) {
+          lidToPhone.set(lidJid, phone);
+          changed = true;
+        }
+      }
+    }
+    if (changed) saveLidMap();
+  });
+
+  sock.ev.on('contacts.update', (contacts) => {
+    let changed = false;
+    for (const contact of contacts) {
+      const id = contact.id;
+      const lid = contact.lid;
+      if (id && lid && id.endsWith('@s.whatsapp.net')) {
+        const phone = id.replace('@s.whatsapp.net', '');
+        const lidJid = lid.endsWith('@lid') ? lid : lid + '@lid';
+        if (!lidToPhone.has(lidJid)) {
+          lidToPhone.set(lidJid, phone);
+          changed = true;
+        }
+      }
+    }
+    if (changed) saveLidMap();
+  });
+
+  // Also extract from messaging history
+  sock.ev.on('messaging-history.set', ({ contacts }) => {
+    if (!contacts || !contacts.length) return;
+    let changed = false;
+    for (const contact of contacts) {
+      const id = contact.id;
+      const lid = contact.lid;
+      if (id && lid && id.endsWith('@s.whatsapp.net')) {
+        const phone = id.replace('@s.whatsapp.net', '');
+        const lidJid = lid.endsWith('@lid') ? lid : lid + '@lid';
+        if (!lidToPhone.has(lidJid)) {
+          lidToPhone.set(lidJid, phone);
+          changed = true;
+        }
+      }
+    }
+    if (changed) saveLidMap();
+  });
+
   // Handle incoming messages
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
@@ -208,7 +312,7 @@ async function startBot() {
           const adminJid = myNumber + '@s.whatsapp.net';
           const senderName = cached?.pushName || 'Unknown';
           const senderJid = cached?.sender || jid || 'Unknown';
-          const senderNumber = senderJid.replace('@s.whatsapp.net', '').replace(/@.*/g, '');
+          const senderNumber = resolveJidToNumber(senderJid);
           const time = cached?.timestamp
             ? new Date(cached.timestamp * 1000).toLocaleString()
             : new Date().toLocaleString();
