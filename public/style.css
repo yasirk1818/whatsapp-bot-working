@@ -1,0 +1,260 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #0b141a;
+  color: #e9edef;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding: 16px 0;
+  border-bottom: 1px solid #233138;
+}
+
+header h1 {
+  font-size: 24px;
+  color: #25d366;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.status .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.status.connected {
+  background: rgba(37, 211, 102, 0.15);
+  color: #25d366;
+}
+
+.status.connected .dot {
+  background: #25d366;
+  box-shadow: 0 0 8px #25d366;
+}
+
+.status.disconnected {
+  background: rgba(234, 67, 53, 0.15);
+  color: #ea4335;
+}
+
+.status.disconnected .dot {
+  background: #ea4335;
+}
+
+.card {
+  background: #111b21;
+  border: 1px solid #233138;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.qr-card {
+  text-align: center;
+}
+
+.qr-card h2 {
+  color: #25d366;
+  margin-bottom: 8px;
+}
+
+.qr-card p {
+  color: #8696a0;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+#qr-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-height: 200px;
+  justify-content: center;
+}
+
+#qr-container img {
+  width: 260px;
+  height: 260px;
+  border-radius: 8px;
+  border: 3px solid #25d366;
+}
+
+.connected-card {
+  text-align: center;
+}
+
+.connected-card h2 {
+  color: #25d366;
+  margin-bottom: 8px;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 16px;
+}
+
+.feature-card {
+  transition: border-color 0.3s;
+}
+
+.feature-card:hover {
+  border-color: #25d366;
+}
+
+.feature-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.feature-header h3 {
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+
+.feature-header p {
+  font-size: 13px;
+  color: #8696a0;
+}
+
+.feature-options {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #233138;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.feature-options label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #8696a0;
+}
+
+.feature-options input[type='number'],
+.feature-options textarea {
+  background: #1f2c34;
+  border: 1px solid #233138;
+  border-radius: 8px;
+  color: #e9edef;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.feature-options input[type='number']:focus,
+.feature-options textarea:focus {
+  outline: none;
+  border-color: #25d366;
+}
+
+/* Toggle Switch */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #3b4a54;
+  border-radius: 28px;
+  transition: 0.3s;
+}
+
+.slider::before {
+  content: '';
+  position: absolute;
+  height: 22px;
+  width: 22px;
+  left: 3px;
+  bottom: 3px;
+  background: #e9edef;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+
+input:checked + .slider {
+  background: #25d366;
+}
+
+input:checked + .slider::before {
+  transform: translateX(24px);
+}
+
+/* Loader */
+.loader {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #233138;
+  border-top: 3px solid #25d366;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .features-grid {
+    grid-template-columns: 1fr;
+  }
+
+  header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  header h1 {
+    font-size: 20px;
+  }
+}

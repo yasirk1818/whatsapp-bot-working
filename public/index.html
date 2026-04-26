@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WhatsApp Bot Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📱 WhatsApp Bot Dashboard</h1>
+      <div id="connection-status" class="status disconnected">
+        <span class="dot"></span>
+        <span id="status-text">Disconnected</span>
+      </div>
+    </header>
+
+    <!-- QR Code Section -->
+    <div id="qr-section" class="card qr-card">
+      <h2>Scan QR Code</h2>
+      <p>Open WhatsApp → Settings → Linked Devices → Link a Device</p>
+      <div id="qr-container">
+        <div class="loader"></div>
+        <p>Waiting for QR Code...</p>
+      </div>
+    </div>
+
+    <!-- Connected Info -->
+    <div id="connected-section" class="card connected-card" style="display: none">
+      <h2>✅ Device Connected</h2>
+      <p>Phone: <strong id="phone-number">-</strong></p>
+    </div>
+
+    <!-- Feature Toggles -->
+    <div class="features-grid">
+      <!-- Reject Calls -->
+      <div class="card feature-card">
+        <div class="feature-header">
+          <div>
+            <h3>📵 Reject Calls</h3>
+            <p>Automatically reject incoming calls</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="rejectCalls-toggle" data-feature="rejectCalls" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Auto Read -->
+      <div class="card feature-card">
+        <div class="feature-header">
+          <div>
+            <h3>👁️ Auto Read</h3>
+            <p>Mark messages as read with random delay</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="autoRead-toggle" data-feature="autoRead" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="feature-options" id="autoRead-options">
+          <label>Min Delay (ms):
+            <input type="number" id="autoRead-minDelay" value="1000" min="500" max="30000" />
+          </label>
+          <label>Max Delay (ms):
+            <input type="number" id="autoRead-maxDelay" value="5000" min="1000" max="60000" />
+          </label>
+        </div>
+      </div>
+
+      <!-- Auto React -->
+      <div class="card feature-card">
+        <div class="feature-header">
+          <div>
+            <h3>😍 Auto React</h3>
+            <p>Send random emoji reactions to messages</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="autoReact-toggle" data-feature="autoReact" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Auto Reply -->
+      <div class="card feature-card">
+        <div class="feature-header">
+          <div>
+            <h3>💬 Auto Reply</h3>
+            <p>Send automatic reply to incoming messages</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="autoReply-toggle" data-feature="autoReply" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="feature-options" id="autoReply-options">
+          <label>Reply Message:
+            <textarea id="autoReply-message" rows="3">Thank you for your message! I will get back to you soon.</textarea>
+          </label>
+        </div>
+      </div>
+
+      <!-- Auto Status View -->
+      <div class="card feature-card">
+        <div class="feature-header">
+          <div>
+            <h3>👀 Auto Status View</h3>
+            <p>Automatically view all status updates</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="autoStatusView-toggle" data-feature="autoStatusView" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Anti Delete -->
+      <div class="card feature-card">
+        <div class="feature-header">
+          <div>
+            <h3>🛡️ Anti Delete</h3>
+            <p>Prevent message deletion (log deleted messages)</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="antiDelete-toggle" data-feature="antiDelete" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
