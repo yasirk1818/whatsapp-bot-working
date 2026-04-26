@@ -6,6 +6,8 @@ const {
   fetchLatestBaileysVersion,
   Browsers,
   proto,
+  USyncQuery,
+  USyncUser,
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const fs = require('fs');
@@ -116,6 +118,122 @@ let settings = loadSettings();
 
 let sock = null;
 
+// Look up phone number from LID using WhatsApp's USyncQuery
+async function lookupPhoneFromLid(lidJid) {
+  if (!sock || !lidJid) return null;
+  try {
+    const query = new USyncQuery().withContactProtocol().withLIDProtocol();
+    const user = new USyncUser().withId(lidJid);
+    query.withUser(user);
+    const result = await sock.executeUSyncQuery(query);
+    if (result?.list?.length) {
+      const entry = result.list[0];
+      // The response id might be the phone JID
+      if (entry.id && entry.id.endsWith('@s.whatsapp.net')) {
+        const phone = entry.id.replace('@s.whatsapp.net', '').split(':')[0];
+        addLidMapping(lidJid, phone);
+        saveLidMap();
+        console.log('USyncQuery resolved LID:', lidJid, '->', phone);
+        return phone;
+      }
+      // Or the lid field might have the phone
+      if (entry.lid && typeof entry.lid === 'string' && !entry.lid.includes('@lid')) {
+        addLidMapping(lidJid, entry.lid);
+        saveLidMap();
+        console.log('USyncQuery resolved LID via lid field:', lidJid, '->', entry.lid);
+        return entry.lid;
+      }
+
+    }
+  } catch (err) {
+    console.error('USyncQuery lookup failed:', err.message);
+  }
+  return null;
+}
+
+function addLidMapping(lid, phone) {
+  if (!lid || !phone) return false;
+  const lidJid = lid.includes('@') ? lid : lid + '@lid';
+  const cleanPhone = phone.replace(/@.*/, '').split(':')[0];
+  if (lidToPhone.has(lidJid) && lidToPhone.get(lidJid) === cleanPhone) return false;
+  lidToPhone.set(lidJid, cleanPhone);
+  const lidNum = lidJid.replace(/@.*/, '');
+  if (!lidToPhone.has(lidNum)) lidToPhone.set(lidNum, cleanPhone);
+  return true;
+}
+
+// Build LID map by looking up known contacts via onWhatsApp
+async function buildLidMapFromSessions() {
+  if (!sock) return;
+  try {
+    // Extract phone-like numbers from session files in auth_info
+    const files = fs.readdirSync(AUTH_DIR).filter(f => f.startsWith('session-'));
+    const numbers = new Set();
+    for (const file of files) {
+      const match = file.match(/^session-(\d+)\./);
+      if (match) {
+        const num = match[1];
+        // Phone numbers are typically 10-13 digits; LIDs are 15+
+        if (num.length >= 10 && num.length <= 14) {
+          numbers.add(num);
+        }
+      }
+    }
+
+    // Also extract phone numbers from group metadata
+    try {
+      const groups = await sock.groupFetchAllParticipating();
+      for (const groupId of Object.keys(groups)) {
+        const group = groups[groupId];
+        if (group.participants) {
+          for (const p of group.participants) {
+            if (p.id && p.id.endsWith('@s.whatsapp.net')) {
+              const num = p.id.replace('@s.whatsapp.net', '').split(':')[0];
+              if (num.length >= 10 && num.length <= 14) numbers.add(num);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Group metadata fetch error:', err.message);
+    }
+
+    if (numbers.size === 0) return;
+    console.log('Looking up', numbers.size, 'phone numbers for LID mapping...');
+
+    // Query WhatsApp for each number to get LID
+    const phoneList = [...numbers];
+    const batchSize = 10;
+    let mapped = 0;
+    for (let i = 0; i < phoneList.length; i += batchSize) {
+      const batch = phoneList.slice(i, i + batchSize);
+      try {
+        const results = await sock.onWhatsApp(...batch.map(n => n + '@s.whatsapp.net'));
+        if (results) {
+          for (const result of results) {
+            if (result.jid && result.lid) {
+              const phone = result.jid.replace('@s.whatsapp.net', '').split(':')[0];
+              const lidJid = result.lid.endsWith('@lid') ? result.lid : result.lid + '@lid';
+              if (addLidMapping(lidJid, phone)) mapped++;
+            }
+          }
+        }
+      } catch (err) {
+        console.error('onWhatsApp batch lookup error:', err.message);
+      }
+    }
+
+    if (mapped > 0) {
+      saveLidMap();
+      console.log('LID map: resolved', mapped, 'numbers, total:', lidToPhone.size);
+    } else {
+      console.log('LID map: no new mappings found from', numbers.size, 'numbers');
+    }
+  } catch (err) {
+    console.error('buildLidMapFromSessions error:', err.message);
+  }
+}
+
 function getState() {
   return { ...state };
 }
@@ -204,24 +322,14 @@ async function startBot() {
       state.qr = null;
       state.phoneNumber = sock.user?.id?.split(':')[0] || 'Unknown';
       console.log('Connected to WhatsApp as', state.phoneNumber);
+
+      // Build LID mapping by looking up known phone numbers
+      buildLidMapFromSessions().catch(err => console.error('LID map build error:', err.message));
     }
   });
 
   // Save credentials on update
   sock.ev.on('creds.update', saveCreds);
-
-  // Helper to register a LID→phone mapping
-  function addLidMapping(lid, phone) {
-    if (!lid || !phone) return false;
-    const lidJid = lid.includes('@') ? lid : lid + '@lid';
-    const cleanPhone = phone.replace(/@.*/, '').split(':')[0];
-    if (lidToPhone.has(lidJid) && lidToPhone.get(lidJid) === cleanPhone) return false;
-    lidToPhone.set(lidJid, cleanPhone);
-    // Also store without @lid suffix for flexible matching
-    const lidNum = lidJid.replace(/@.*/, '');
-    if (!lidToPhone.has(lidNum)) lidToPhone.set(lidNum, cleanPhone);
-    return true;
-  }
 
   // Build LID-to-phone mapping from all contact events
   function processContacts(contacts, source) {
@@ -292,43 +400,7 @@ async function startBot() {
         continue;
       }
 
-      // Cache message for anti-delete
-      if (settings.antiDelete.enabled) {
-        console.log('[Message Debug] from:', jid, 'participant:', msg.key.participant || 'none', 'pushName:', msg.pushName || 'none');
-        const participant = msg.key.participant || null;
-        const isLidSender = jid.endsWith('@lid') || (participant && participant.endsWith('@lid'));
-        messageCache.set(msg.key.id, {
-          key: msg.key,
-          message: msg.message,
-          sender: msg.key.remoteJid,
-          participant: participant,
-          pushName: msg.pushName || 'Unknown',
-          isLid: isLidSender,
-          timestamp: msg.messageTimestamp || Math.floor(Date.now() / 1000),
-        });
-        // Also try to build LID mapping from message sender
-        if (jid && participant) {
-          if (jid.endsWith('@lid') && participant.endsWith('@s.whatsapp.net')) {
-            const phone = participant.replace('@s.whatsapp.net', '').split(':')[0];
-            if (!lidToPhone.has(jid)) {
-              lidToPhone.set(jid, phone);
-              saveLidMap();
-            }
-          } else if (participant.endsWith('@lid') && jid.endsWith('@s.whatsapp.net')) {
-            const phone = jid.replace('@s.whatsapp.net', '').split(':')[0];
-            if (!lidToPhone.has(participant)) {
-              lidToPhone.set(participant, phone);
-              saveLidMap();
-            }
-          }
-        }
-        if (messageCache.size > MAX_CACHE_SIZE) {
-          const oldest = messageCache.keys().next().value;
-          messageCache.delete(oldest);
-        }
-      }
-
-      // Detect "Delete for Everyone" (revoke protocol message)
+      // Detect "Delete for Everyone" (revoke protocol message) — check BEFORE caching
       const protocolMsg = msg.message?.protocolMessage;
       if (protocolMsg && protocolMsg.type === proto.Message.ProtocolMessage.Type.REVOKE) {
         if (settings.antiDelete.enabled && sock.user?.id) {
@@ -341,34 +413,38 @@ async function startBot() {
           // Try multiple sources for the real number
           const senderJid = cached?.sender || jid || '';
           const participantJid = cached?.participant || msg.key.participant || '';
-          const wasLid = cached?.isLid || senderJid.endsWith('@lid');
-          console.log('[Anti-Delete Debug] senderJid:', senderJid, 'participant:', participantJid, 'isLid:', wasLid, 'LID map size:', lidToPhone.size);
+
 
           let senderNumber = '';
-          let resolvedFromLid = false;
 
-          // Try all sources to get a phone number
+          // Step 1: Try all available JIDs for phone number
           const jidsToTry = [participantJid, senderJid, protocolMsg.key?.remoteJid, protocolMsg.key?.participant].filter(Boolean);
           for (const tryJid of jidsToTry) {
-            // If it's a phone JID, use it directly
             if (tryJid.endsWith('@s.whatsapp.net')) {
               senderNumber = tryJid.replace('@s.whatsapp.net', '').split(':')[0];
-              resolvedFromLid = false;
               break;
             }
-            // If it's a LID, try to resolve from map
             const resolved = resolveJidToNumber(tryJid);
             if (resolved !== tryJid.replace(/@.*/, '').split(':')[0]) {
-              // Successfully resolved from LID map
               senderNumber = resolved;
-              resolvedFromLid = true;
               break;
             }
           }
 
-          // Only show number if it's a real phone number (not a LID)
-          const isRealNumber = senderNumber && !wasLid || resolvedFromLid;
-          const showNumber = (isRealNumber && senderNumber && /^\d{10,15}$/.test(senderNumber))
+          // Step 2: If still no number, try USyncQuery lookup for LID JIDs
+          if (!senderNumber || !/^\d{10,15}$/.test(senderNumber)) {
+            for (const tryJid of jidsToTry) {
+              if (tryJid.endsWith('@lid')) {
+                const phone = await lookupPhoneFromLid(tryJid);
+                if (phone && /^\d{10,15}$/.test(phone)) {
+                  senderNumber = phone;
+                  break;
+                }
+              }
+            }
+          }
+
+          const showNumber = (senderNumber && /^\d{10,15}$/.test(senderNumber))
             ? ` (+${senderNumber})` : '';
 
           const time = cached?.timestamp
@@ -402,6 +478,48 @@ async function startBot() {
           }
         }
         continue;
+      }
+
+      // Cache message for anti-delete (after revoke check to avoid caching revoke messages)
+      if (settings.antiDelete.enabled) {
+        const participant = msg.key.participant || null;
+        const isLidSender = jid.endsWith('@lid') || (participant && participant.endsWith('@lid'));
+        // Proactively resolve LID to phone when message arrives
+        if (isLidSender) {
+          const lidJidToResolve = jid.endsWith('@lid') ? jid : participant;
+          if (lidJidToResolve && !lidToPhone.has(lidJidToResolve)) {
+            lookupPhoneFromLid(lidJidToResolve).catch(() => {});
+          }
+        }
+        messageCache.set(msg.key.id, {
+          key: msg.key,
+          message: msg.message,
+          sender: msg.key.remoteJid,
+          participant: participant,
+          pushName: msg.pushName || 'Unknown',
+          isLid: isLidSender,
+          timestamp: msg.messageTimestamp || Math.floor(Date.now() / 1000),
+        });
+        // Also try to build LID mapping from message sender
+        if (jid && participant) {
+          if (jid.endsWith('@lid') && participant.endsWith('@s.whatsapp.net')) {
+            const phone = participant.replace('@s.whatsapp.net', '').split(':')[0];
+            if (!lidToPhone.has(jid)) {
+              lidToPhone.set(jid, phone);
+              saveLidMap();
+            }
+          } else if (participant.endsWith('@lid') && jid.endsWith('@s.whatsapp.net')) {
+            const phone = jid.replace('@s.whatsapp.net', '').split(':')[0];
+            if (!lidToPhone.has(participant)) {
+              lidToPhone.set(participant, phone);
+              saveLidMap();
+            }
+          }
+        }
+        if (messageCache.size > MAX_CACHE_SIZE) {
+          const oldest = messageCache.keys().next().value;
+          messageCache.delete(oldest);
+        }
       }
 
       // Auto Read
