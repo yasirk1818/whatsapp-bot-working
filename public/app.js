@@ -1,4 +1,13 @@
-const API_BASE = '';
+// Build API base URL without credentials (handles user:pass@host URLs)
+const API_BASE = (() => {
+  const url = new URL(window.location.href);
+  url.username = '';
+  url.password = '';
+  url.pathname = '';
+  url.search = '';
+  url.hash = '';
+  return url.origin;
+})();
 
 // Poll state every 2 seconds
 let pollInterval = null;
