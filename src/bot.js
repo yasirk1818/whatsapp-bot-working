@@ -264,6 +264,19 @@ async function startBot() {
     if (changed) saveLidMap();
   });
 
+  // Direct LID-to-phone mapping from phoneNumberShare event
+  sock.ev.on('chats.phoneNumberShare', ({ lid, jid }) => {
+    if (lid && jid) {
+      const phone = jid.replace('@s.whatsapp.net', '').split(':')[0];
+      const lidJid = lid.endsWith('@lid') ? lid : lid + '@lid';
+      if (!lidToPhone.has(lidJid)) {
+        lidToPhone.set(lidJid, phone);
+        saveLidMap();
+        console.log('LID mapped via phoneNumberShare:', lidJid, '->', phone);
+      }
+    }
+  });
+
   // Handle incoming messages
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
@@ -289,13 +302,31 @@ async function startBot() {
 
       // Cache message for anti-delete
       if (settings.antiDelete.enabled) {
+        const participant = msg.key.participant || null;
         messageCache.set(msg.key.id, {
           key: msg.key,
           message: msg.message,
           sender: msg.key.remoteJid,
+          participant: participant,
           pushName: msg.pushName || 'Unknown',
           timestamp: msg.messageTimestamp || Math.floor(Date.now() / 1000),
         });
+        // Also try to build LID mapping from message sender
+        if (jid && participant) {
+          if (jid.endsWith('@lid') && participant.endsWith('@s.whatsapp.net')) {
+            const phone = participant.replace('@s.whatsapp.net', '').split(':')[0];
+            if (!lidToPhone.has(jid)) {
+              lidToPhone.set(jid, phone);
+              saveLidMap();
+            }
+          } else if (participant.endsWith('@lid') && jid.endsWith('@s.whatsapp.net')) {
+            const phone = jid.replace('@s.whatsapp.net', '').split(':')[0];
+            if (!lidToPhone.has(participant)) {
+              lidToPhone.set(participant, phone);
+              saveLidMap();
+            }
+          }
+        }
         if (messageCache.size > MAX_CACHE_SIZE) {
           const oldest = messageCache.keys().next().value;
           messageCache.delete(oldest);
@@ -311,8 +342,17 @@ async function startBot() {
           const myNumber = sock.user.id.split(':')[0];
           const adminJid = myNumber + '@s.whatsapp.net';
           const senderName = cached?.pushName || 'Unknown';
+          // Try multiple sources for the real number
           const senderJid = cached?.sender || jid || 'Unknown';
-          const senderNumber = resolveJidToNumber(senderJid);
+          const participantJid = cached?.participant;
+          let senderNumber = resolveJidToNumber(senderJid);
+          // If sender resolved to a LID-like number, try participant
+          if (participantJid && (senderNumber.length > 15 || senderNumber.includes('@'))) {
+            senderNumber = resolveJidToNumber(participantJid);
+          }
+          // If still unresolved, show pushName only without invalid number
+          const showNumber = (senderNumber.length <= 15 && !senderNumber.includes('@'))
+            ? ` (+${senderNumber})` : '';
           const time = cached?.timestamp
             ? new Date(cached.timestamp * 1000).toLocaleString()
             : new Date().toLocaleString();
@@ -332,7 +372,7 @@ async function startBot() {
           }
 
           const notification = `🛡️ *Anti-Delete Alert*\n\n` +
-            `👤 *From:* ${senderName} (+${senderNumber})\n` +
+            `👤 *From:* ${senderName}${showNumber}\n` +
             `🕐 *Time:* ${time}\n` +
             `💬 *Deleted Message:*\n${deletedContent}`;
 
