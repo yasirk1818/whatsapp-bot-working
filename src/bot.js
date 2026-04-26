@@ -47,18 +47,25 @@ function saveLidMap() {
 
 function resolveJidToNumber(jid) {
   if (!jid) return 'Unknown';
+  // Direct phone JID
   if (jid.endsWith('@s.whatsapp.net')) {
-    return jid.replace('@s.whatsapp.net', '');
+    return jid.replace('@s.whatsapp.net', '').split(':')[0];
   }
-  if (jid.endsWith('@lid') && lidToPhone.has(jid)) {
+  // Check LID map with full JID
+  if (lidToPhone.has(jid)) {
     return lidToPhone.get(jid);
   }
-  const numMatch = jid.match(/^(\d+)@/);
-  if (numMatch && lidToPhone.has(jid)) {
-    return lidToPhone.get(jid);
+  // Check LID map with @lid suffix
+  if (!jid.includes('@') && lidToPhone.has(jid + '@lid')) {
+    return lidToPhone.get(jid + '@lid');
   }
-  if (numMatch) return numMatch[1];
-  return jid;
+  // Check LID map with just the numeric part
+  const numPart = jid.replace(/@.*/, '').split(':')[0];
+  if (lidToPhone.has(numPart)) {
+    return lidToPhone.get(numPart);
+  }
+  // Return number part but mark it as potentially a LID
+  return numPart;
 }
 
 loadLidMap();
@@ -203,76 +210,61 @@ async function startBot() {
   // Save credentials on update
   sock.ev.on('creds.update', saveCreds);
 
-  // Build LID-to-phone mapping from contacts
-  sock.ev.on('contacts.upsert', (contacts) => {
-    let changed = false;
-    for (const contact of contacts) {
-      const id = contact.id;
-      const lid = contact.lid;
-      if (id && id.endsWith('@s.whatsapp.net')) {
-        const phone = id.replace('@s.whatsapp.net', '');
-        if (lid && !lidToPhone.has(lid)) {
-          lidToPhone.set(lid, phone);
-          changed = true;
-        }
-      }
-      if (lid && id && id.endsWith('@s.whatsapp.net')) {
-        const phone = id.replace('@s.whatsapp.net', '');
-        const lidJid = lid.endsWith('@lid') ? lid : lid + '@lid';
-        if (!lidToPhone.has(lidJid)) {
-          lidToPhone.set(lidJid, phone);
-          changed = true;
-        }
-      }
-    }
-    if (changed) saveLidMap();
-  });
+  // Helper to register a LID→phone mapping
+  function addLidMapping(lid, phone) {
+    if (!lid || !phone) return false;
+    const lidJid = lid.includes('@') ? lid : lid + '@lid';
+    const cleanPhone = phone.replace(/@.*/, '').split(':')[0];
+    if (lidToPhone.has(lidJid) && lidToPhone.get(lidJid) === cleanPhone) return false;
+    lidToPhone.set(lidJid, cleanPhone);
+    // Also store without @lid suffix for flexible matching
+    const lidNum = lidJid.replace(/@.*/, '');
+    if (!lidToPhone.has(lidNum)) lidToPhone.set(lidNum, cleanPhone);
+    return true;
+  }
 
-  sock.ev.on('contacts.update', (contacts) => {
+  // Build LID-to-phone mapping from all contact events
+  function processContacts(contacts, source) {
     let changed = false;
     for (const contact of contacts) {
-      const id = contact.id;
-      const lid = contact.lid;
-      if (id && lid && id.endsWith('@s.whatsapp.net')) {
-        const phone = id.replace('@s.whatsapp.net', '');
-        const lidJid = lid.endsWith('@lid') ? lid : lid + '@lid';
-        if (!lidToPhone.has(lidJid)) {
-          lidToPhone.set(lidJid, phone);
-          changed = true;
-        }
+      const id = contact.id || '';
+      const lid = contact.lid || '';
+      const jid = contact.jid || '';
+      // Case 1: id is phone JID and lid is present
+      if (id.endsWith('@s.whatsapp.net') && lid) {
+        const phone = id.replace('@s.whatsapp.net', '').split(':')[0];
+        if (addLidMapping(lid, phone)) changed = true;
+      }
+      // Case 2: jid is phone JID and lid is present
+      if (jid.endsWith('@s.whatsapp.net') && lid) {
+        const phone = jid.replace('@s.whatsapp.net', '').split(':')[0];
+        if (addLidMapping(lid, phone)) changed = true;
+      }
+      // Case 3: id is LID and jid is phone
+      if (id.endsWith('@lid') && jid.endsWith('@s.whatsapp.net')) {
+        const phone = jid.replace('@s.whatsapp.net', '').split(':')[0];
+        if (addLidMapping(id, phone)) changed = true;
       }
     }
-    if (changed) saveLidMap();
-  });
+    if (changed) {
+      saveLidMap();
+      console.log(`LID map updated from ${source}, total:`, lidToPhone.size);
+    }
+  }
 
-  // Also extract from messaging history
-  sock.ev.on('messaging-history.set', ({ contacts }) => {
-    if (!contacts || !contacts.length) return;
-    let changed = false;
-    for (const contact of contacts) {
-      const id = contact.id;
-      const lid = contact.lid;
-      if (id && lid && id.endsWith('@s.whatsapp.net')) {
-        const phone = id.replace('@s.whatsapp.net', '');
-        const lidJid = lid.endsWith('@lid') ? lid : lid + '@lid';
-        if (!lidToPhone.has(lidJid)) {
-          lidToPhone.set(lidJid, phone);
-          changed = true;
-        }
-      }
-    }
-    if (changed) saveLidMap();
+  sock.ev.on('contacts.upsert', (c) => processContacts(c, 'contacts.upsert'));
+  sock.ev.on('contacts.update', (c) => processContacts(c, 'contacts.update'));
+  sock.ev.on('messaging-history.set', (data) => {
+    if (data.contacts?.length) processContacts(data.contacts, 'history-sync');
   });
 
   // Direct LID-to-phone mapping from phoneNumberShare event
   sock.ev.on('chats.phoneNumberShare', ({ lid, jid }) => {
     if (lid && jid) {
       const phone = jid.replace('@s.whatsapp.net', '').split(':')[0];
-      const lidJid = lid.endsWith('@lid') ? lid : lid + '@lid';
-      if (!lidToPhone.has(lidJid)) {
-        lidToPhone.set(lidJid, phone);
+      if (addLidMapping(lid, phone)) {
         saveLidMap();
-        console.log('LID mapped via phoneNumberShare:', lidJid, '->', phone);
+        console.log('LID mapped via phoneNumberShare:', lid, '->', phone);
       }
     }
   });
@@ -302,13 +294,16 @@ async function startBot() {
 
       // Cache message for anti-delete
       if (settings.antiDelete.enabled) {
+        console.log('[Message Debug] from:', jid, 'participant:', msg.key.participant || 'none', 'pushName:', msg.pushName || 'none');
         const participant = msg.key.participant || null;
+        const isLidSender = jid.endsWith('@lid') || (participant && participant.endsWith('@lid'));
         messageCache.set(msg.key.id, {
           key: msg.key,
           message: msg.message,
           sender: msg.key.remoteJid,
           participant: participant,
           pushName: msg.pushName || 'Unknown',
+          isLid: isLidSender,
           timestamp: msg.messageTimestamp || Math.floor(Date.now() / 1000),
         });
         // Also try to build LID mapping from message sender
@@ -341,18 +336,41 @@ async function startBot() {
           const cached = revokedId ? messageCache.get(revokedId) : null;
           const myNumber = sock.user.id.split(':')[0];
           const adminJid = myNumber + '@s.whatsapp.net';
-          const senderName = cached?.pushName || 'Unknown';
+          const senderName = cached?.pushName || msg.pushName || 'Unknown';
+
           // Try multiple sources for the real number
-          const senderJid = cached?.sender || jid || 'Unknown';
-          const participantJid = cached?.participant;
-          let senderNumber = resolveJidToNumber(senderJid);
-          // If sender resolved to a LID-like number, try participant
-          if (participantJid && (senderNumber.length > 15 || senderNumber.includes('@'))) {
-            senderNumber = resolveJidToNumber(participantJid);
+          const senderJid = cached?.sender || jid || '';
+          const participantJid = cached?.participant || msg.key.participant || '';
+          const wasLid = cached?.isLid || senderJid.endsWith('@lid');
+          console.log('[Anti-Delete Debug] senderJid:', senderJid, 'participant:', participantJid, 'isLid:', wasLid, 'LID map size:', lidToPhone.size);
+
+          let senderNumber = '';
+          let resolvedFromLid = false;
+
+          // Try all sources to get a phone number
+          const jidsToTry = [participantJid, senderJid, protocolMsg.key?.remoteJid, protocolMsg.key?.participant].filter(Boolean);
+          for (const tryJid of jidsToTry) {
+            // If it's a phone JID, use it directly
+            if (tryJid.endsWith('@s.whatsapp.net')) {
+              senderNumber = tryJid.replace('@s.whatsapp.net', '').split(':')[0];
+              resolvedFromLid = false;
+              break;
+            }
+            // If it's a LID, try to resolve from map
+            const resolved = resolveJidToNumber(tryJid);
+            if (resolved !== tryJid.replace(/@.*/, '').split(':')[0]) {
+              // Successfully resolved from LID map
+              senderNumber = resolved;
+              resolvedFromLid = true;
+              break;
+            }
           }
-          // If still unresolved, show pushName only without invalid number
-          const showNumber = (senderNumber.length <= 15 && !senderNumber.includes('@'))
+
+          // Only show number if it's a real phone number (not a LID)
+          const isRealNumber = senderNumber && !wasLid || resolvedFromLid;
+          const showNumber = (isRealNumber && senderNumber && /^\d{10,15}$/.test(senderNumber))
             ? ` (+${senderNumber})` : '';
+
           const time = cached?.timestamp
             ? new Date(cached.timestamp * 1000).toLocaleString()
             : new Date().toLocaleString();
