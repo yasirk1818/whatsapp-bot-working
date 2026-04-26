@@ -3,6 +3,8 @@ const {
   useMultiFileAuthState,
   DisconnectReason,
   makeCacheableSignalKeyStore,
+  fetchLatestBaileysVersion,
+  Browsers,
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const path = require('path');
@@ -63,14 +65,24 @@ async function startBot() {
 
   const logger = pino({ level: 'silent' });
 
+  let version;
+  try {
+    const fetched = await fetchLatestBaileysVersion();
+    version = fetched.version;
+    console.log('Using WA version:', version);
+  } catch (err) {
+    version = [2, 3000, 1015901307];
+    console.log('Using fallback WA version:', version);
+  }
+
   sock = makeWASocket({
     auth: {
       creds: authState.creds,
       keys: makeCacheableSignalKeyStore(authState.keys, logger),
     },
+    version,
     logger,
-    printQRInTerminal: true,
-    browser: ['WhatsApp Bot', 'Chrome', '1.0.0'],
+    browser: Browsers.macOS('WhatsApp Bot'),
   });
 
   // Handle connection updates
