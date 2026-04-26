@@ -100,6 +100,12 @@ function applySettingsToUI(data) {
   if (replyMsgEl && data.autoReply) {
     replyMsgEl.value = data.autoReply.message;
   }
+
+  // Anti Delete admin number
+  const adminNumEl = document.getElementById('antiDelete-adminNumber');
+  if (adminNumEl && data.antiDelete) {
+    adminNumEl.value = data.antiDelete.adminNumber || '';
+  }
 }
 
 // Event Listeners
@@ -142,6 +148,14 @@ document.addEventListener('DOMContentLoaded', () => {
   if (replyMsgEl) {
     replyMsgEl.addEventListener('change', () => {
       updateSetting('autoReply', { message: replyMsgEl.value });
+    });
+  }
+
+  // Anti Delete admin number
+  const adminNumEl = document.getElementById('antiDelete-adminNumber');
+  if (adminNumEl) {
+    adminNumEl.addEventListener('change', () => {
+      updateSetting('antiDelete', { adminNumber: adminNumEl.value });
     });
   }
 });

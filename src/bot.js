@@ -5,6 +5,7 @@ const {
   makeCacheableSignalKeyStore,
   fetchLatestBaileysVersion,
   Browsers,
+  proto,
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const path = require('path');
@@ -13,6 +14,9 @@ const qrcode = require('qrcode');
 const AUTH_DIR = path.join(__dirname, '..', 'auth_info');
 
 const REACTIONS = ['👍', '❤️', '😂', '🔥', '👏', '🎉', '💯', '😍', '🙏', '✨'];
+
+const MAX_CACHE_SIZE = 500;
+const messageCache = new Map();
 
 let state = {
   qr: null,
@@ -29,7 +33,7 @@ let settings = {
     message: 'Thank you for your message! I will get back to you soon.',
   },
   autoStatusView: { enabled: false },
-  antiDelete: { enabled: false },
+  antiDelete: { enabled: false, adminNumber: '' },
 };
 
 let sock = null;
@@ -145,6 +149,63 @@ async function startBot() {
             await sock.readMessages([msg.key]);
           } catch (err) {
             console.error('Error viewing status:', err.message);
+          }
+        }
+        continue;
+      }
+
+      // Cache message for anti-delete
+      if (settings.antiDelete.enabled) {
+        messageCache.set(msg.key.id, {
+          key: msg.key,
+          message: msg.message,
+          sender: msg.key.remoteJid,
+          pushName: msg.pushName || 'Unknown',
+          timestamp: msg.messageTimestamp || Math.floor(Date.now() / 1000),
+        });
+        if (messageCache.size > MAX_CACHE_SIZE) {
+          const oldest = messageCache.keys().next().value;
+          messageCache.delete(oldest);
+        }
+      }
+
+      // Detect "Delete for Everyone" (revoke protocol message)
+      const protocolMsg = msg.message?.protocolMessage;
+      if (protocolMsg && protocolMsg.type === proto.Message.ProtocolMessage.Type.REVOKE) {
+        if (settings.antiDelete.enabled && settings.antiDelete.adminNumber) {
+          const revokedId = protocolMsg.key?.id;
+          const cached = revokedId ? messageCache.get(revokedId) : null;
+          const adminJid = settings.antiDelete.adminNumber.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
+          const senderName = cached?.pushName || 'Unknown';
+          const senderNumber = (cached?.sender || jid || 'Unknown').replace('@s.whatsapp.net', '');
+          const time = cached?.timestamp
+            ? new Date(cached.timestamp * 1000).toLocaleString()
+            : new Date().toLocaleString();
+
+          let deletedContent = '[Unable to retrieve message]';
+          if (cached?.message) {
+            const m = cached.message;
+            if (m.conversation) deletedContent = m.conversation;
+            else if (m.extendedTextMessage?.text) deletedContent = m.extendedTextMessage.text;
+            else if (m.imageMessage) deletedContent = '[Image] ' + (m.imageMessage.caption || '');
+            else if (m.videoMessage) deletedContent = '[Video] ' + (m.videoMessage.caption || '');
+            else if (m.audioMessage) deletedContent = '[Audio]';
+            else if (m.documentMessage) deletedContent = '[Document] ' + (m.documentMessage.fileName || '');
+            else if (m.stickerMessage) deletedContent = '[Sticker]';
+            else if (m.contactMessage) deletedContent = '[Contact] ' + (m.contactMessage.displayName || '');
+            else if (m.locationMessage) deletedContent = '[Location]';
+          }
+
+          const notification = `🛡️ *Anti-Delete Alert*\n\n` +
+            `👤 *From:* ${senderName} (${senderNumber})\n` +
+            `🕐 *Time:* ${time}\n` +
+            `💬 *Deleted Message:*\n${deletedContent}`;
+
+          try {
+            await sock.sendMessage(adminJid, { text: notification });
+            console.log('Anti-delete notification sent to admin');
+          } catch (err) {
+            console.error('Error sending anti-delete notification:', err.message);
           }
         }
         continue;
