@@ -414,11 +414,21 @@ async function startBot() {
           const senderJid = cached?.sender || jid || '';
           const participantJid = cached?.participant || msg.key.participant || '';
 
+          // Exclude bot's own JIDs to avoid showing admin number as sender
+          const myLid = sock.user?.lid || '';
+          const myJid = myNumber + '@s.whatsapp.net';
+          function isOwnJid(j) {
+            if (!j) return false;
+            if (j === myJid) return true;
+            if (myLid && j === myLid) return true;
+            const resolved = resolveJidToNumber(j);
+            return resolved === myNumber;
+          }
 
           let senderNumber = '';
 
-          // Step 1: Try all available JIDs for phone number
-          const jidsToTry = [participantJid, senderJid, protocolMsg.key?.remoteJid, protocolMsg.key?.participant].filter(Boolean);
+          // Step 1: Try all available JIDs for phone number (skip own JIDs)
+          const jidsToTry = [participantJid, senderJid, protocolMsg.key?.participant].filter(j => j && !isOwnJid(j));
           for (const tryJid of jidsToTry) {
             if (tryJid.endsWith('@s.whatsapp.net')) {
               senderNumber = tryJid.replace('@s.whatsapp.net', '').split(':')[0];
