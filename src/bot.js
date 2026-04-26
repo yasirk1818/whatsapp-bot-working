@@ -297,7 +297,7 @@ class BotInstance {
         }
 
         if (shouldReconnect) {
-          this._reconnectTimer = setTimeout(() => this.start(), 3000);
+          this._reconnectTimer = setTimeout(() => this.start().catch(err => console.error(`[${this.deviceId}] Reconnect error:`, err.message)), 3000);
         }
       }
 
@@ -549,8 +549,10 @@ class BotInstance {
     if (this.sock) {
       try {
         this.sock.ev.removeAllListeners();
-        this.sock.end(new Error('Device disconnected by user'));
-      } catch (err) { /* ignore */ }
+        await this.sock.logout();
+      } catch (err) {
+        try { this.sock.end(new Error('Device disconnected by user')); } catch (e) { /* ignore */ }
+      }
       this.sock = null;
     }
     this.state = { qr: null, connected: false, phoneNumber: null };
