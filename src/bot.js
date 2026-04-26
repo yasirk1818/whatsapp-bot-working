@@ -8,10 +8,12 @@ const {
   proto,
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
+const fs = require('fs');
 const path = require('path');
 const qrcode = require('qrcode');
 
 const AUTH_DIR = path.join(__dirname, '..', 'auth_info');
+const SETTINGS_FILE = path.join(__dirname, '..', 'settings.json');
 
 const REACTIONS = ['👍', '❤️', '😂', '🔥', '👏', '🎉', '💯', '😍', '🙏', '✨'];
 
@@ -24,7 +26,7 @@ let state = {
   phoneNumber: null,
 };
 
-let settings = {
+const DEFAULT_SETTINGS = {
   rejectCalls: { enabled: false },
   autoRead: { enabled: false, minDelay: 1000, maxDelay: 5000 },
   autoReact: { enabled: false, reactions: REACTIONS },
@@ -35,6 +37,32 @@ let settings = {
   autoStatusView: { enabled: false },
   antiDelete: { enabled: false },
 };
+
+function loadSettings() {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
+      const merged = { ...DEFAULT_SETTINGS };
+      for (const key of Object.keys(merged)) {
+        if (data[key]) merged[key] = { ...merged[key], ...data[key] };
+      }
+      return merged;
+    }
+  } catch (err) {
+    console.error('Error loading settings:', err.message);
+  }
+  return { ...DEFAULT_SETTINGS };
+}
+
+function saveSettings() {
+  try {
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  } catch (err) {
+    console.error('Error saving settings:', err.message);
+  }
+}
+
+let settings = loadSettings();
 
 let sock = null;
 
@@ -52,6 +80,7 @@ function updateSettings(newSettings) {
       settings[key] = { ...settings[key], ...newSettings[key] };
     }
   }
+  saveSettings();
   return { ...settings };
 }
 
