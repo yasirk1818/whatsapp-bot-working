@@ -71,8 +71,9 @@ async function startBot() {
     version = fetched.version;
     console.log('Using WA version:', version);
   } catch (err) {
-    version = [2, 3000, 1015901307];
-    console.log('Using fallback WA version:', version);
+    const defaultVersion = require('@whiskeysockets/baileys/lib/Defaults/baileys-version.json');
+    version = defaultVersion.version;
+    console.log('Using bundled WA version:', version);
   }
 
   sock = makeWASocket({
