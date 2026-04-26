@@ -1,4 +1,9 @@
 node_modules/
 auth_info/
+settings.json
+settings-*.json
+lid-map.json
+lid-map-*.json
+devices.json
 .env
 *.log

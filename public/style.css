@@ -243,6 +243,133 @@ input:checked + .slider::before {
   }
 }
 
+/* Buttons */
+.btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn:hover { opacity: 0.85; }
+
+.btn-primary {
+  background: #25d366;
+  color: #111b21;
+}
+
+.btn-secondary {
+  background: #233138;
+  color: #e9edef;
+}
+
+.btn-danger {
+  background: #ea4335;
+  color: #fff;
+  width: 100%;
+}
+
+/* Section Header */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.section-header h2 {
+  color: #e9edef;
+  font-size: 20px;
+}
+
+/* Device Cards */
+.device-card {
+  cursor: pointer;
+  transition: border-color 0.3s, transform 0.15s;
+}
+
+.device-card:hover {
+  border-color: #25d366;
+  transform: translateY(-1px);
+}
+
+.device-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.device-card-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.device-card-info h3 {
+  font-size: 16px;
+  margin-bottom: 2px;
+}
+
+.device-card-status {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.device-card-status .dot {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.device-card-status.online .dot {
+  background: #25d366;
+  box-shadow: 0 0 8px #25d366;
+}
+
+.device-card-status.offline .dot {
+  background: #ea4335;
+}
+
+.arrow {
+  font-size: 20px;
+  color: #8696a0;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: #8696a0;
+}
+
+.empty-text {
+  text-align: center;
+  color: #8696a0;
+  padding: 40px 20px;
+  font-size: 14px;
+}
+
+/* Device Detail */
+.device-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.device-info-row h2 {
+  font-size: 22px;
+  color: #e9edef;
+}
+
+.danger-card {
+  margin-top: 16px;
+  text-align: center;
+}
+
 /* Responsive */
 @media (max-width: 480px) {
   .features-grid {
