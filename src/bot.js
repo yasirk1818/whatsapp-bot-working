@@ -59,6 +59,8 @@ class BotInstance {
     this.lidMapFile = path.join(DATA_DIR, `lid-map-${deviceId}.json`);
 
     this.sock = null;
+    this._reconnectTimer = null;
+    this._destroyed = false;
     this.state = { qr: null, connected: false, phoneNumber: null };
     this.settings = this._loadSettings();
     this.lidToPhone = new Map();
@@ -239,7 +241,15 @@ class BotInstance {
     return { ...this.settings };
   }
 
+  _cancelReconnect() {
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+  }
+
   async start() {
+    if (this._destroyed) return;
     // Ensure auth dir exists
     if (!fs.existsSync(this.authDir)) {
       fs.mkdirSync(this.authDir, { recursive: true });
@@ -287,7 +297,7 @@ class BotInstance {
         }
 
         if (shouldReconnect) {
-          setTimeout(() => this.start(), 3000);
+          this._reconnectTimer = setTimeout(() => this.start(), 3000);
         }
       }
 
@@ -522,6 +532,7 @@ class BotInstance {
   }
 
   async stop() {
+    this._cancelReconnect();
     if (this.sock) {
       try {
         this.sock.ev.removeAllListeners();
@@ -533,6 +544,8 @@ class BotInstance {
   }
 
   async disconnect() {
+    this._cancelReconnect();
+    this._destroyed = true;
     if (this.sock) {
       try {
         this.sock.ev.removeAllListeners();
